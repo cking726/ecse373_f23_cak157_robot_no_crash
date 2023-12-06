@@ -5,37 +5,55 @@
 
 #include <sstream>
 
-sensor_msgs::LaserScan lidar_msg;
+ros::Publisher *p_cmd_pub;
+sensor_msgs::LaserScan laser_read;
+double wall_dist = 0.0;
+bool isWall = false;
 
-void lidarCallback(const sensor_msgs::LaserScan msg){
-  lidar_msg = msg;
+void laserCallback(const sensor_msgs::LaserScan laser_read) {
+  isWall = false;
+  for (int indx = 45; indx < 225; indx++) {
+    if (laser_read.ranges[indx] < wall_dist) {
+      isWall = true;
+      break;
+    }
+  }
 }
 
-void velocityCallback(const geometry_msgs::Twist msg){
-  vel_msg = msg;
-  p_pub->publish(vel_msg);
+void desCallback(const geometry_msgs::Twist::ConstPtr& des_msg) {
+  geometry_msgs::Twist vel_msg;
+  vel_msg = *des_msg;
+
+  if (isWall && (vel_msg.linear.x > 0.0)) {
+    vel_msg.linear.x = 0.0;
+    ROS_INFO_THROTTLE(0.5,"HALT");
+  }
+  else if (vel_msg.linear.x < 0.0) {
+    isWall = false;
+  }
+
+  p_cmd_pub->publish(vel_msg);
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
 
-  ros::Publisher *p_pub;
-  ros::init(argc, argv, "robot_no_crash");
+  ros::init(argc, argv, "robot_no_crash_node");
 
   ros::NodeHandle n;
 
-  ros::Publisher no_crash_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 1000);
-  p_pub = &no_crash_pub;
+  ros::Publisher cmd_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
+  p_cmd_pub = &cmd_pub;
 
-  ros::Subscriber lidar_sub = n.subscribe("laser_1", 1000, lidarCallback);
-  ros::Subscriber des_vel_sub = n.subscribe("des_vel", 1000, velocityCallback);
+  ros::Subscriber des_sub = n.subscribe("des_vel", 10, desCallback);
+  ros::Subscriber laser_sub = n.subscribe("laser_0", 10, laserCallback);
 
   ros::Rate loop_rate(10);
 
-    geometry_msgs::Twist vel_msg;
-    
-    no_crash_pub.publish(vel_msg);
-
-  
+n.param("wall_dist", wall_dist, 1.0);
+  int count = 0;
+  while (ros::ok()) {
+    geometry_msgs::Twist des_msg;
+    cmd_pub.publish(des_msg);
+  }
   return 0;
 }
